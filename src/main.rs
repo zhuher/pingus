@@ -487,7 +487,7 @@ mod canvas {
         f.write_all(&Chunk::form_chunk(Chunk::IEND)).unwrap();
     }
 }*/
-fn get_same_res_divs(a: u32, b: u32) -> Vec<(u32, (u32, u32))> {
+/*fn get_same_res_divs(a: u32, b: u32) -> Vec<(u32, (u32, u32))> {
     let mut res: Vec<(u32, (u32, u32))> = (1..=b >> 1).fold(Vec::new(), |mut acc, d| {
         if b % d == 0 && a % (b / d) == 0 {
             acc.push((b / d, (a / (b / d), d)));
@@ -496,8 +496,8 @@ fn get_same_res_divs(a: u32, b: u32) -> Vec<(u32, (u32, u32))> {
     });
     res.sort();
     res
-}
-fn get_divs(a: u32) -> Vec<(u32, u32)> {
+}*/
+/*fn get_divs(a: u32) -> Vec<(u32, u32)> {
     let mut res: Vec<(u32, u32)> = (1..=a >> 1).fold(Vec::new(), |mut acc, d| {
         if a % d == 0 {
             acc.push((d, a / d));
@@ -506,8 +506,8 @@ fn get_divs(a: u32) -> Vec<(u32, u32)> {
     });
     res.reverse();
     res
-}
-fn u32_to_u8(v: &[u32]) -> Vec<u8> {
+}*/
+/*fn u32_to_u8(v: &[u32]) -> Vec<u8> {
     v.iter().fold(Vec::new(), |mut acc, &n| {
         acc.push((n >> 24) as u8);
         acc.push(((n >> 16) & 0xFF) as u8);
@@ -515,19 +515,19 @@ fn u32_to_u8(v: &[u32]) -> Vec<u8> {
         acc.push((n & 0xFF) as u8);
         acc
     })
-}
+}*/
 // 4096 x 2160
-const SMOL_RES: (u32, u32) = (800, 600);
-const MBP_RES: (u32, u32) = (3024, 1964);
-const FOURK_RES: (u32, u32) = (4096, 2160);
-const WIDTH: u32 = MBP_RES.0;
-const HEIGHT: u32 = MBP_RES.1;
-const COLS: u32 = WIDTH.saturating_div(3);
-const ROWS: u32 = HEIGHT.saturating_div(3);
+// const SMOL_RES: (u32, u32) = (800, 600);
+// const MBP_RES: (u32, u32) = (3024, 1964);
+// const FOURK_RES: (u32, u32) = (4096, 2160);
+// const WIDTH: u32 = MBP_RES.0;
+// const HEIGHT: u32 = MBP_RES.1;
+// const COLS: u32 = WIDTH.saturating_div(3);
+// const ROWS: u32 = HEIGHT.saturating_div(3);
 fn main() {
-    println!("{:?}", get_same_res_divs(WIDTH, HEIGHT));
-    println!("{:?}", get_divs(WIDTH));
-    println!("{:?}", get_divs(HEIGHT));
+    // println!("{:?}", get_same_res_divs(WIDTH, HEIGHT));
+    // println!("{:?}", get_divs(WIDTH));
+    // println!("{:?}", get_divs(HEIGHT));
     // circles(WIDTH, HEIGHT);
     // borders(SMOL_RES.0, SMOL_RES.1);
     // test();
