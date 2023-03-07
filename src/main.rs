@@ -524,6 +524,7 @@ mod canvas {
 // const HEIGHT: u32 = MBP_RES.1;
 // const COLS: u32 = WIDTH.saturating_div(3);
 // const ROWS: u32 = HEIGHT.saturating_div(3);
+const URAL: &str = "URAL";
 fn main() {
     // println!("{:?}", get_same_res_divs(WIDTH, HEIGHT));
     // println!("{:?}", get_divs(WIDTH));
@@ -531,4 +532,5 @@ fn main() {
     // circles(WIDTH, HEIGHT);
     // borders(SMOL_RES.0, SMOL_RES.1);
     // test();
+    println!("Добро пожаловать в наш переводчик, позволяющий общаться с \x1b[5mНими\x1b[0m.");
 }
