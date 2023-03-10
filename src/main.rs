@@ -238,8 +238,10 @@ mod canvas {
             if x1 > x2 {
                 std::mem::swap(&mut x1, &mut x2);
             }
-            for dy in y1..y2 {
-                for dx in x1..x2 {
+            for dy in std::cmp::min(y1, (self.h - 1) as isize)..std::cmp::min(y2, self.h as isize) {
+                for dx in
+                    std::cmp::min(x1, (self.w - 1) as isize)..std::cmp::min(x2, self.w as isize)
+                {
                     self.data[(dx as u32 + self.w * dy as u32) as usize] = colour;
                 }
             }
@@ -250,7 +252,9 @@ mod canvas {
             }
         }*/
         pub(crate) fn set_pixel(&mut self, p: &Point, colour: u32) {
-            self.data[(p.x + p.y.saturating_mul(self.w as isize)) as usize] = colour;
+            self.data[(std::cmp::min(p.x, (self.w - 1) as isize)
+                + std::cmp::min(p.y, (self.h - 1) as isize).saturating_mul(self.w as isize))
+                as usize] = colour;
         }
         /*pub(crate) fn set_rainbow(c: &mut Canvas) {
             let mut colour: u32 = 0xFF0000FF;
@@ -507,7 +511,7 @@ mod canvas {
     res.reverse();
     res
 }*/
-/*fn u32_to_u8(v: &[u32]) -> Vec<u8> {
+fn u32_to_u8(v: &[u32]) -> Vec<u8> {
     v.iter().fold(Vec::new(), |mut acc, &n| {
         acc.push((n >> 24) as u8);
         acc.push(((n >> 16) & 0xFF) as u8);
@@ -515,7 +519,7 @@ mod canvas {
         acc.push((n & 0xFF) as u8);
         acc
     })
-}*/
+}
 // 4096 x 2160
 // const SMOL_RES: (u32, u32) = (800, 600);
 // const MBP_RES: (u32, u32) = (3024, 1964);
@@ -525,6 +529,33 @@ mod canvas {
 // const COLS: u32 = WIDTH.saturating_div(3);
 // const ROWS: u32 = HEIGHT.saturating_div(3);
 const URAL: &str = "URAL";
+const BLINK: &str = "\x1b[5m";
+const RESET: &str = "\x1b[0m";
+const RED: &str = "\x1b[31m";
+const GREN: &str = "\x1b[32m";
+const ORNG: &str = "\x1b[33m";
+const ONEUP: &str = "\x1b[1F";
+const ERLINE: &str = "\x1b[2K";
+const ERTOEND: &str = "\x1b[0K";
+use crate::canvas::{Canvas, Point};
+use crate::png::Chunk;
+use std::io::{stdin, stdout, BufRead, BufReader, Write};
+
+fn read_taxograms(path: &str) -> Result<std::collections::HashMap<char, u32>, std::io::Error> {
+    let file: std::fs::File = std::fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut taxmap: std::collections::HashMap<char, u32> = std::collections::HashMap::new();
+    reader.lines().for_each(|line| {
+        if let Ok(contents) = line {
+            if let [chr, num] = contents.split_whitespace().collect::<Vec<&str>>()[..] {
+                if let Ok(num) = u32::from_str_radix(num, 16) {
+                    taxmap.insert(chr.chars().next().unwrap(), num);
+                }
+            }
+        }
+    });
+    Ok(taxmap)
+}
 fn main() {
     // println!("{:?}", get_same_res_divs(WIDTH, HEIGHT));
     // println!("{:?}", get_divs(WIDTH));
@@ -532,5 +563,270 @@ fn main() {
     // circles(WIDTH, HEIGHT);
     // borders(SMOL_RES.0, SMOL_RES.1);
     // test();
-    println!("Добро пожаловать в наш переводчик, позволяющий общаться с \x1b[5mНими\x1b[0m.");
+    println!(
+        "{}Добро пожаловать в наш переводчик, позволяющий общаться с {BLINK}Ними{RESET}.",
+        format!("{ERLINE}{ONEUP}").repeat(50)
+    );
+    let (mut logwidth, mut logheight): (u32, u32) = (800, 600);
+    let mut logogname: String = String::from(URAL);
+    let mut dictname: String = logogname.clone();
+    let mut taxogramms: std::collections::HashMap<char, u32> = std::collections::HashMap::new();
+    let mut input: String = String::new();
+    let mut status: String = String::new();
+    match read_taxograms(&format!("{dictname}.txt")) {
+        Ok(tm) => {
+            taxogramms = tm;
+            status = format!("Словарь {dictname} загружен.");
+        }
+        Err(e) => status = format!("Невозможно прочитать словарь таксограмм: {RED}{e}{RESET}"),
+    }
+    let mut taxdict: Vec<(char, String)> = {
+        let mut temp: Vec<(char, String)> = Vec::new();
+        for (k, v) in taxogramms.clone() {
+            temp.push((k, format!("{:08X}", v)));
+        }
+        temp.sort();
+        temp
+    };
+    'main: loop {
+        taxdict = {
+            let mut temp: Vec<(char, String)> = Vec::new();
+            for (k, v) in taxogramms.clone() {
+                temp.push((k, format!("{:08X}", v)));
+            }
+            temp.sort();
+            temp
+        };
+        println!(
+            "Вы можете следующее:\n\
+        0: Указать название логографа; {GREN}{}{RESET}.png\n\
+        1: Обновить его таксограммы; {GREN}{}{RESET}\n\
+        2: Указать название словаря;\n\
+        3: Записать таксограммы в словарь;\n\
+        4: Загрузить текущий словарь в память; {GREN}{}{RESET}.txt\n\
+        5: Очистить память;\n\
+        6: Указать измерения логографа; {GREN}{}{RESET}\n\
+        7: Создать логограф;\n\
+        8: Запросить значения таксограмм;\n\
+        9: Выйти.\n{status}",
+            logogname,
+            taxdict.iter().fold(String::new(), |mut acc, e| {
+                acc.push(e.0);
+                acc
+            }),
+            dictname,
+            format_args!("{}x{}", logwidth, logheight)
+        );
+        status.clear();
+        input.clear();
+        stdin().read_line(&mut input);
+        println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}",);
+        let parsres = input.trim().parse::<u32>();
+        input.clear();
+        match parsres {
+            Ok(0) => {
+                println!("{ONEUP}{ERLINE}Введите название логографа. ");
+                match stdin().read_line(&mut input) {
+                    Ok(_) => {
+                        println!("{ONEUP}{ERLINE}{ONEUP}{ERLINE}");
+                        logogname = String::from(input.trim());
+                        status = format!("{GREN}Смена имени логографа успешна.{RESET}");
+                    }
+                    Err(e) => status = format!("{e}"),
+                }
+            }
+            Ok(1) => {
+                let mut temptgm: std::collections::HashMap<char, u32> =
+                    std::collections::HashMap::new();
+                'two: loop {
+                    input.clear();
+                    let tgmstr = {
+                        let mut t = temptgm.clone().into_keys().collect::<Vec<char>>();
+                        t.sort();
+                        t.iter().collect::<String>()
+                    };
+                    println!("{ONEUP}{ERLINE}Введите {RED}q{RESET} для завершения, {RED}r{RESET} для сброса. Будут обновлены: {GREN}{}{RESET}",{
+                    if temptgm.is_empty() {
+                        ERTOEND
+                    } else {&tgmstr}
+                });
+                    if stdin().read_line(&mut input).is_ok() {
+                        if let [chr, num] = input.split_whitespace().collect::<Vec<&str>>()[..] {
+                            if let Ok(num) = u32::from_str_radix(num, 16) {
+                                temptgm.insert(chr.chars().next().unwrap(), num);
+                            }
+                        }
+                        if input.trim() == "q" {
+                            for (k, v) in temptgm {
+                                taxogramms.insert(k, v);
+                            }
+                            status = format!("{GREN}Записано: {tgmstr}{RESET}");
+                            println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                            break 'two;
+                        }
+                        if input.trim() == "r" {
+                            temptgm.clear();
+                        }
+                        println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                    }
+                }
+            }
+            Ok(2) => {
+                println!("{ONEUP}{ERLINE}Введите имя словаря.");
+                match stdin().read_line(&mut input) {
+                    Ok(_) => {
+                        println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                        dictname = String::from(input.trim());
+                        status = format!("{GREN}Словарь сменён.{RESET}")
+                    }
+                    Err(e) => status = format!("Неудалось сменить словарь: {e}"),
+                }
+            }
+            Ok(3) => {
+                println!("{ONEUP}{ERLINE}");
+                match std::fs::File::create(&format!("{dictname}.txt")) {
+                    Ok(mut f) => {
+                        println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                        for (k, v) in taxdict.clone() {
+                            write!(f, "{}", format_args!("{k} {v}\n"));
+                        }
+                        status = format!("{GREN}Изменения в таксограммах записаны.{RESET}");
+                    }
+                    Err(e) => status = format!("Невозможно записать словарь: {RED}{e}{RESET}"),
+                };
+            }
+            Ok(4) => {
+                println! {"{ONEUP}{ERLINE}"};
+                match read_taxograms(&format!("{dictname}.txt")) {
+                    Ok(tm) => {
+                        taxogramms = tm;
+                        status = format!("Словарь {dictname} загружен.");
+                    }
+                    Err(e) => {
+                        status = format!("Невозможно прочитать словарь таксограмм: {RED}{e}{RESET}")
+                    }
+                }
+            }
+            Ok(5) => {
+                println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                taxogramms.clear();
+                status = format!("{GREN}Память таксограмм сброшена.{RESET}");
+            }
+            Ok(6) => {
+                println!("{ONEUP}{ERLINE}Введите измерения логографа.");
+                if stdin().read_line(&mut input).is_ok() {
+                    if let [width, height] = input.split_whitespace().collect::<Vec<&str>>()[..] {
+                        match (width.parse::<u32>(), height.parse::<u32>()) {
+                            (Ok(w), Ok(h)) => {
+                                println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                                (logwidth, logheight) = (w, h);
+                                status = format!("{GREN}Смена измерений успешна.{RESET}");
+                            }
+                            (Err(we), Err(he)) => {
+                                status =
+                                    format!("{RED}Введена некорректная ширина и высота.{RESET}");
+                            }
+                            (Err(we), _) => {
+                                status = format!("{RED}Введена некорректная ширина.{RESET}");
+                            }
+                            (_, Err(he)) => {
+                                status = format!("{RED}Введена некорректная высота.{RESET}");
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(7) => {
+                println!("{ONEUP}{ERLINE}Введите таксограммы.");
+                match std::fs::File::create(format!("./{logogname}.png")) {
+                    Ok(mut f) => {
+                        if stdin().read_line(&mut input).is_ok() {
+                            let cols = input.trim().chars().count();
+                            let colw = logwidth.saturating_div(cols as u32);
+                            let mut c: Canvas =
+                                Canvas::new(0xFF, (cols * colw as usize) as u32, logheight);
+                            let mut taxogc: u32 = 0;
+                            input.trim().chars().for_each(|ch| {
+                                if taxogramms.contains_key(&ch) {
+                                    c.set_rect(
+                                        &Point {
+                                            x: (colw * taxogc) as isize,
+                                            y: 0,
+                                        },
+                                        &Point {
+                                            x: (colw * (taxogc + 1)) as isize,
+                                            y: logheight as isize,
+                                        },
+                                        *taxogramms.get(&ch).unwrap(),
+                                    )
+                                } else {
+                                    for dy in 0..logheight {
+                                        for dx in (colw * taxogc)..(colw * (taxogc + 1)) {
+                                            c.set_pixel(
+                                                &Point {
+                                                    x: dx as isize,
+                                                    y: dy as isize,
+                                                },
+                                                rand::Rng::gen_range(
+                                                    &mut rand::thread_rng(),
+                                                    0xFF..0xFFFFFFFF,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+                                taxogc += 1;
+                            });
+                            f.write_all(&Chunk::form_chunk(Chunk::Sign));
+                            f.write_all(&Chunk::form_chunk(Chunk::IHDR(c.w, c.h, 8, 6, 0, 0, 0)));
+                            f.write_all(&Chunk::form_chunk(Chunk::IDAT(
+                                c.w,
+                                c.h,
+                                u32_to_u8(&c.data),
+                            )));
+                            f.write_all(&Chunk::form_chunk(Chunk::IEND));
+                            println!("{ERLINE}{ONEUP}{ERLINE}{ONEUP}");
+                            status = format!("{GREN}Логограф создан.{RESET}")
+                        }
+                    }
+                    Err(e) => status = format!("Невозможно создать логограф: {RED}{e}{RESET}"),
+                }
+            }
+            Ok(8) => 'eight: loop {
+                input.clear();
+                println!(
+                    "{ONEUP}{ERLINE}{ONEUP}{ERLINE}Вводите 1 символ за раз или '{RED}done{RESET}' для завершения. {GREN}{status}{RESET}",
+                );
+                status.clear();
+                if stdin().read_line(&mut input).is_ok()
+                    && input.trim().chars().count() > 0
+                    && input.trim() != "done"
+                {
+                    status = if !taxogramms.contains_key(&input.chars().next().unwrap()) {
+                        format!("{RED}В словаре не найдено.{RESET}")
+                    } else {
+                        format!(
+                            "{} {:08X}",
+                            taxogramms
+                                .get_key_value(&input.chars().next().unwrap())
+                                .unwrap()
+                                .0,
+                            taxogramms
+                                .get_key_value(&input.chars().next().unwrap())
+                                .unwrap()
+                                .1
+                        )
+                    }
+                } else {
+                    println!("{ONEUP}{ERLINE}");
+                    break 'eight;
+                }
+            },
+            Ok(9) => break 'main,
+            _ => {
+                status = String::from("Такого действия нет.");
+            }
+        }
+        println!("{}", format!("{ERLINE}{ONEUP}").repeat(13));
+    }
 }
