@@ -1,6 +1,11 @@
 // use crate::example::*;
 #![allow(unused)]
+
+use crate::example::*;
+
 mod png {
+    use std::io::Write;
+
     pub(crate) enum Chunk {
         Sign,
         IHDR(u32, u32, u8, u8, u8, u8, u8),
@@ -68,6 +73,19 @@ mod png {
                 Chunk::IEND => Chunk::format(&Vec::from(&b"IEND"[..])),
             }
         }
+    }
+    pub(crate) fn make(c: &super::canvas::Canvas, filepath: &str) {
+        let mut f: std::fs::File = std::fs::File::create(filepath).unwrap();
+        f.write_all(&Chunk::form_chunk(Chunk::Sign)).unwrap();
+        f.write_all(&Chunk::form_chunk(Chunk::IHDR(c.w, c.h, 8, 6, 0, 0, 0)))
+            .unwrap();
+        f.write_all(&Chunk::form_chunk(Chunk::IDAT(
+            c.w,
+            c.h,
+            super::u32_to_u8(&c.data),
+        )))
+        .unwrap();
+        f.write_all(&Chunk::form_chunk(Chunk::IEND)).unwrap();
     }
 }
 mod crc32 {
@@ -145,7 +163,6 @@ mod adler {
     }
 }
 mod nondeflate {
-    use super::adler::Adler32;
 
     pub fn compress(data: &[u8]) -> Vec<u8> {
         const CHUNK_SIZE: usize = 65530;
@@ -169,7 +186,7 @@ mod nondeflate {
         // header
         raw_data.extend(&[120, 1]);
         let mut pos = 0;
-        let mut adl = Adler32::new();
+        let mut adl = super::adler::Adler32::new();
         for chunk in data.chunks(CHUNK_SIZE) {
             let chunk_len = chunk.len();
             pos += chunk_len;
@@ -194,6 +211,17 @@ mod nondeflate {
         raw_data
     }
 }
+macro_rules! set_pixel {
+    ($canvas:expr, $point:expr, $colour:expr) => {
+        $canvas.data[$point.0 as usize + ($point.1 as usize).saturating_mul($canvas.w as usize)] =
+            $colour;
+    };
+}
+macro_rules! rng_range {
+    ($range:expr) => {
+        rand::Rng::gen_range(&mut rand::thread_rng(), $range)
+    };
+}
 mod canvas {
     #[derive(Debug)]
     pub(crate) struct Canvas {
@@ -201,11 +229,7 @@ mod canvas {
         pub(crate) w: u32,
         pub(crate) h: u32,
     }
-    #[derive(Debug)]
-    pub struct Point {
-        pub(crate) x: isize,
-        pub(crate) y: isize,
-    }
+    pub(crate) type Point = (isize, isize);
     impl Canvas {
         pub(crate) fn new(colour: u32, w: u32, h: u32) -> Canvas {
             Canvas {
@@ -214,45 +238,114 @@ mod canvas {
                 h,
             }
         }
-        /*pub(crate) fn set_circle(&mut self, cp: &Point, r: isize, colour: u32) {
-            for y in cp.y.saturating_sub(r)..std::cmp::min(self.h as isize, cp.y + r) {
-                for x in cp.x.saturating_sub(r)..std::cmp::min(self.w as isize, cp.x + r) {
-                    let (dx, dy) = (x.saturating_sub(cp.x), y.saturating_sub(cp.y));
+        pub(crate) fn octantcircle(&mut self, cp: Point, r: isize) {
+            for y in cp.1.saturating_sub(r)..std::cmp::min(self.h as isize, cp.1 + r) {
+                for x in cp.0.saturating_sub(r)..std::cmp::min(self.w as isize, cp.0 + r) {
+                    let (dx, dy) = (x.saturating_sub(cp.0), y.saturating_sub(cp.1));
                     if dx * dx + dy * dy < r * r {
-                        self.data[(x.saturating_add(y.saturating_mul(self.w as isize))) as usize] =
-                            colour;
+                        set_pixel!(
+                            self,
+                            (x, y),
+                            if x == cp.0 || y == cp.1 || (cp.0 - x).abs() == (cp.1 - y).abs() {
+                                0xFF
+                            } else {
+                                match super::bresenham::octant(cp, (x, y)) {
+                                    0 => super::DRRED,
+                                    1 => super::DRORANGE,
+                                    2 => super::DRYELLOW,
+                                    3 => super::DRGREEN,
+                                    4 => super::DRCYAN,
+                                    5 => super::DRPURPLE,
+                                    6 => super::DRPINK,
+                                    7 => 0xFFFFFFFF,
+                                    _ => unreachable!(),
+                                }
+                            }
+                        );
                     }
                 }
             }
-        }*/
-        pub(crate) fn set_rect(&mut self, p1: &Point, p2: &Point, colour: u32) {
-            assert_ne!(p1.y, p2.y);
-            assert_ne!(p1.x, p2.x);
-            let mut x1 = p1.x;
-            let mut y1 = p1.y;
-            let mut x2 = p2.x;
-            let mut y2 = p2.y;
-            if y1 > y2 {
-                std::mem::swap(&mut y1, &mut y2);
-            }
-            if x1 > x2 {
-                std::mem::swap(&mut x1, &mut x2);
-            }
-            for dy in y1..y2 {
-                for dx in x1..x2 {
-                    self.data[(dx as u32 + self.w * dy as u32) as usize] = colour;
+        }
+        pub(crate) fn set_circle(&mut self, cp: Point, r: isize, colour: u32, rand: bool) {
+            for y in
+                std::cmp::max(cp.1.saturating_sub(r), 0)..std::cmp::min(self.h as isize, cp.1 + r)
+            {
+                for x in std::cmp::max(cp.0.saturating_sub(r), 0)
+                    ..std::cmp::min(self.w as isize, cp.0 + r)
+                {
+                    let (dx, dy) = (x.saturating_sub(cp.0), y.saturating_sub(cp.1));
+                    if dx * dx + dy * dy < r * r {
+                        set_pixel!(
+                            self,
+                            (x, y),
+                            if !rand {
+                                colour
+                            } else {
+                                rng_range!(0xff..=0xffffffff)
+                            }
+                        );
+                    }
                 }
             }
         }
-        /*pub(crate) fn set_line(&mut self, p1: &Point, p2: &Point, colour: u32) {
-            for coord in super::bresenham::Bresenham::new(p1, p2) {
-                Canvas::set_pixel(self, &coord, colour);
+        pub(crate) fn set_rect(&mut self, mut p1: Point, mut p2: Point, colour: u32, rand: bool) {
+            assert_ne!(p1, p2);
+            if p1.0 > p2.0 {
+                std::mem::swap(&mut p1.0, &mut p2.0);
+            };
+            if p1.1 > p2.1 {
+                std::mem::swap(&mut p1.1, &mut p2.1);
+            };
+            if p1.1 == p2.1 {
+                p2.1 = p2.0;
             }
-        }*/
-        pub(crate) fn set_pixel(&mut self, p: &Point, colour: u32) {
-            self.data[(p.x + p.y.saturating_mul(self.w as isize)) as usize] = colour;
+            if p1.0 == p2.0 {
+                p2.0 = p2.1;
+            }
+            for y in std::cmp::max(p1.1, 0)..std::cmp::min(p2.1, self.h as isize) {
+                for x in std::cmp::max(p1.0, 0)..std::cmp::min(p2.0, self.w as isize) {
+                    set_pixel!(
+                        self,
+                        (x, y),
+                        if !rand {
+                            colour
+                        } else {
+                            rng_range!(0xff..=0xffffffff)
+                        }
+                    );
+                }
+            }
         }
-        /*pub(crate) fn set_rainbow(c: &mut Canvas) {
+        pub(crate) fn set_line(&mut self, mut p1: Point, p2: Point, colour: u32, rand: bool) {
+            let dx = (p2.0 - p1.0).abs();
+            let dy = (p2.1 - p1.1).abs();
+            let (sx, sy) = crate::bresenham::octant_to_d(crate::bresenham::octant(p1, p2));
+            let mut err = dx - dy;
+            loop {
+                set_pixel!(
+                    self,
+                    p1,
+                    if !rand {
+                        colour
+                    } else {
+                        rng_range!(0xff..=0xffffffff)
+                    }
+                );
+                if p1.0 == p2.0 && p1.1 == p2.1 {
+                    break;
+                }
+                let e2 = err << 1;
+                if e2 > -dy {
+                    err -= dy;
+                    p1.0 += sx;
+                }
+                if e2 < dx {
+                    err += dx;
+                    p1.1 += sy;
+                }
+            }
+        }
+        pub(crate) fn set_rainbow(&mut self) {
             let mut colour: u32 = 0xFF0000FF;
             let mut dc: Dcol = Dcol::Redplusgreen;
             enum Dcol {
@@ -263,18 +356,8 @@ mod canvas {
                 Blueplusred,
                 Minusbluered,
             }
-            for x in 0..c.w {
-                c.set_rect(
-                    &Point {
-                        x: x as isize,
-                        y: 0,
-                    },
-                    &Point {
-                        x: 1,
-                        y: c.h as isize,
-                    },
-                    colour,
-                );
+            for x in 0..self.w {
+                self.set_rect((x as isize, 0), (1, self.h as isize), colour, false);
                 match dc {
                     Dcol::Redplusgreen => {
                         colour = colour.saturating_add(0x010000);
@@ -314,179 +397,206 @@ mod canvas {
                     }
                 }
             }
-        }*/
+        }
+        pub(crate) fn set_triangle(
+            &mut self,
+            a: Point,
+            b: Point,
+            c: Point,
+            colour: u32,
+            rand: bool,
+        ) {
+            for y in std::cmp::min(std::cmp::min(a.1, self.h as isize), std::cmp::min(b.1, c.1))
+                ..std::cmp::max(a.1, std::cmp::max(b.1, c.1))
+            {
+                for x in std::cmp::min(std::cmp::min(a.0, self.w as isize), std::cmp::min(b.0, c.0))
+                    ..std::cmp::max(a.0, std::cmp::max(b.0, c.0))
+                {
+                    let thirdtdabpos: bool = (x - a.0) * (b.1 - a.1) - (y - a.1) * (b.0 - a.0) > 0;
+                    if thirdtdabpos != ((x - a.0) * (c.1 - a.1) - (y - a.1) * (c.0 - a.0) > 0)
+                        && ((x - b.0) * (c.1 - b.1) - (y - b.1) * (c.0 - b.0) > 0) == thirdtdabpos
+                    {
+                        set_pixel!(
+                            self,
+                            (x, y),
+                            if !rand {
+                                colour
+                            } else {
+                                rng_range!(0xff..=0xffffffff)
+                            }
+                        );
+                    }
+                }
+            }
+        }
     }
 }
-/*mod example {
-    use crate::bresenham::Bresenham;
-    use crate::canvas::{Canvas, Point};
-    use crate::png::Chunk;
-    use crate::{canvas, u32_to_u8};
+
+mod bresenham {
+    pub(crate) fn octant(p1: crate::canvas::Point, p2: crate::canvas::Point) -> u8 {
+        let (mut dx, mut dy) = (p2.0 - p1.0, p2.1 - p1.1);
+        let mut octant = 0;
+        if dy < 0 {
+            (dx, dy) = (-dx, -dy);
+            octant += 4;
+        }
+        if dx < 0 {
+            (dx, dy) = (dy, -dx);
+            octant += 2
+        }
+        if dx < dy {
+            octant += 1
+        }
+        octant
+    }
+    pub(crate) fn octant_to_d(octant: u8) -> crate::canvas::Point {
+        match octant {
+            0 | 1 => (1, 1),
+            2 | 3 => (-1, 1),
+            4 | 5 => (-1, -1),
+            6 | 7 => (1, -1),
+            _ => unreachable!(),
+        }
+    }
+    // fn _calc(p1: Point, p2: Point) -> Vec<Point> {
+    //     Vec::new()
+    // }
+}
+mod example {
+    use super::{
+        canvas::{Canvas, Point},
+        png::{make, Chunk},
+        u32_to_u8,
+    };
     use std::io::Write;
 
-    const DRACVEC: [u32; 7] = [
-        0x8BE9FDFF, 0x50fa7bff, 0xffb86cff, 0xff79c6ff, 0xbd93f9ff, 0xff5555ff, 0xf1fa8cff,
-    ];
-
-    pub(crate) fn circles(w: u32, h: u32) {
-        let mut f: std::fs::File = std::fs::File::create("examples/circles.png").unwrap();
-        let mut c: Canvas = Canvas::new(0x505050FF, w, h);
-        let r: u32 = std::cmp::min(w.saturating_div(10), h.saturating_div(10)).saturating_div(2);
-        let cellw: u32 = w.saturating_div(10);
-        let cellh: u32 = h.saturating_div(10);
-        Canvas::set_circle(
-            &mut c,
-            &Point {
-                x: r as isize,
-                y: r as isize,
-            },
-            r as isize,
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
-        );
-        Canvas::set_circle(
-            &mut c,
-            &Point {
-                x: (w - r) as isize,
-                y: r as isize,
-            },
-            r as isize,
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
-        );
-        Canvas::set_circle(
-            &mut c,
-            &Point {
-                x: (w - r) as isize,
-                y: (h - r) as isize,
-            },
-            r as isize,
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
-        );
-        Canvas::set_circle(
-            &mut c,
-            &Point {
-                x: r as isize,
-                y: (h - r) as isize,
-            },
-            r as isize,
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
-        );
-        Canvas::set_circle(
-            &mut c,
-            &Point {
-                x: (w.saturating_div(2) - r) as isize,
-                y: h.saturating_div(2) as isize,
-            },
-            r as isize,
-            0xFFFFFFFF,
-        );
-        Canvas::set_circle(
-            &mut c,
-            &Point {
-                x: (w.saturating_div(2) + r) as isize,
-                y: h.saturating_div(2) as isize,
-            },
-            r as isize,
-            0xFF,
-        );
-        f.write_all(&Chunk::form_chunk(Chunk::Sign)).unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IHDR(c.w, c.h, 8, 6, 0, 0, 0)))
-            .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IDAT(
-            c.w,
-            c.h,
-            u32_to_u8(&c.data),
-        )))
-        .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IEND)).unwrap();
+    pub(crate) fn circles(w: u32, h: u32, columns: isize, rows: isize) {
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
+        let cellw: isize = (w as isize).saturating_div(columns);
+        let cellh: isize = (h as isize).saturating_div(rows);
+        let (xpad, ypad) = ((w as isize % columns) >> 1, (h as isize % rows) >> 1);
+        let r: isize = std::cmp::min(cellw, cellh) >> 1;
+        let (mut x, mut y) = (xpad, ypad);
+        loop {
+            if y > c.h as isize {
+                break;
+            }
+            loop {
+                let cp = ((x + (cellw >> 1)), y + (cellh >> 1));
+                if cp.0 > c.w as isize || cp.1 > c.h as isize {
+                    break;
+                }
+                c.set_circle(cp, r, super::DRACVEC[rng_range!(0..7)], false);
+                x += cellw;
+            }
+            x = xpad;
+            y += cellh;
+        }
+        make(&c, "examples/circles.png");
     }
     pub(crate) fn borders(w: u32, h: u32) {
-        let mut f: std::fs::File = std::fs::File::create("examples/borders.png").unwrap();
-        let mut c: Canvas = Canvas::new(0x505050FF, w, h);
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         Canvas::set_rect(
             &mut c,
-            &Point { x: 0, y: 0 },
-            &Point {
-                x: w as isize,
-                y: 1,
-            },
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
+            (0, 0),
+            (w as isize, 1),
+            super::DRACVEC[rng_range!(0..7)],
+            false,
         );
         Canvas::set_rect(
             &mut c,
-            &Point { x: 0, y: 0 },
-            &Point {
-                x: 1,
-                y: h as isize,
-            },
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
+            (0, 0),
+            (1, h as isize),
+            super::DRACVEC[rng_range!(0..7)],
+            false,
         );
         Canvas::set_rect(
             &mut c,
-            &Point {
-                x: w as isize,
-                y: h as isize,
-            },
-            &Point {
-                x: (w - 1) as isize,
-                y: 0,
-            },
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
+            (w as isize, h as isize),
+            ((w - 1) as isize, 0),
+            super::DRACVEC[rng_range!(0..7)],
+            false,
         );
         Canvas::set_rect(
             &mut c,
-            &Point {
-                x: w as isize,
-                y: h as isize,
-            },
-            &Point {
-                x: 0,
-                y: (h - 1) as isize,
-            },
-            DRACVEC[rand::Rng::gen_range(&mut rand::thread_rng(), 0..7)],
+            (w as isize, h as isize),
+            (0, (h - 1) as isize),
+            super::DRACVEC[rng_range!(0..7)],
+            false,
         );
-        f.write_all(&Chunk::form_chunk(Chunk::Sign)).unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IHDR(c.w, c.h, 8, 6, 0, 0, 0)))
-            .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IDAT(
-            c.w,
-            c.h,
-            u32_to_u8(&c.data),
-        )))
-        .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IEND)).unwrap();
+        make(&c, "examples/borders.png");
     }
-    pub(crate) fn test() {
-        let mut f: std::fs::File = std::fs::File::create("examples/pixle.png").unwrap();
-        let mut c: Canvas = Canvas::new(0x505050FF, 800, 600);
-        c.set_line(
-            &Point { x: 100, y: 150 },
-            &Point { x: 200, y: 170 },
-            0xFF0000FF,
-        );
-        c.set_line(&Point { x: 100, y: 150 }, &Point { x: 60, y: 200 }, 0xFFFF);
-        c.set_line(
-            &Point { x: 200, y: 170 },
-            &Point { x: 60, y: 200 },
-            0xFF00FF,
-        );
-        Canvas::set_pixel(&mut c, &Point { x: 2, y: 0 }, 0xFFFFFFFF);
-        Canvas::set_pixel(&mut c, &Point { x: 1, y: 0 }, 0x808080FF);
-        Canvas::set_pixel(&mut c, &Point { x: 0, y: 0 }, 0xFF);
-        Canvas::set_pixel(&mut c, &Point { x: 0, y: 1 }, 0xFF0000FF);
-        Canvas::set_pixel(&mut c, &Point { x: 1, y: 1 }, 0xFF00FF);
-        Canvas::set_pixel(&mut c, &Point { x: 2, y: 1 }, 0xFFFF);
-        f.write_all(&Chunk::form_chunk(Chunk::Sign)).unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IHDR(c.w, c.h, 8, 6, 0, 0, 0)))
-            .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IDAT(
-            c.w,
-            c.h,
-            u32_to_u8(&c.data),
-        )))
-        .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IEND)).unwrap();
+    pub(crate) fn pixles() {
+        let mut c: Canvas = Canvas::new(0x282a36ff, 3, 2);
+        set_pixel!(c, (2, 0), 0xFFFFFFFF);
+        set_pixel!(c, (1, 0), 0x808080FF);
+        set_pixel!(c, (0, 0), 0xFF);
+        set_pixel!(c, (0, 1), 0xFF0000FF);
+        set_pixel!(c, (1, 1), 0xFF00FF);
+        set_pixel!(c, (2, 1), 0xFFFF);
+        make(&c, "examples/pixles.png");
     }
-}*/
+    pub(crate) fn octant_circle(w: u32, h: u32, cp: Point, r: isize) {
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
+        Canvas::octantcircle(&mut c, cp, r);
+        make(&c, "examples/octant_circle.png");
+    }
+    pub(crate) fn lines(w: u32, h: u32, divideby: isize) {
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
+        let mut points: Vec<Point> = Vec::new();
+        let mut y: isize = 0;
+        loop {
+            if y > h as isize - 1 {
+                y = h as isize - 1;
+                if points.last().unwrap().1 != h as isize - 1 {
+                    let mut x: isize = 0;
+                    loop {
+                        if x > w as isize - 1 {
+                            if !points.contains(&(w as isize - 1, y)) {
+                                points.push((w as isize - 1, y));
+                            }
+                            break;
+                        }
+                        points.push((x, y));
+                        x += (w as isize).saturating_div(divideby);
+                    }
+                }
+                break;
+            }
+            let mut x: isize = 0;
+            loop {
+                if x > w as isize - 1 {
+                    if !points.contains(&(w as isize - 1, y)) {
+                        points.push((w as isize - 1, y));
+                    }
+                    break;
+                }
+                points.push((x, y));
+                x += (w as isize).saturating_div(divideby);
+            }
+            y += (h as isize).saturating_div(divideby);
+        }
+        for p1 in &points {
+            for p2 in &points {
+                if p1 != p2 {
+                    Canvas::set_line(&mut c, *p1, *p2, super::DRACVEC[rng_range!(0..7)], false);
+                }
+            }
+        }
+        make(&c, "examples/lines.png");
+    }
+    pub(crate) fn test(w: u32, h: u32) {
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
+        c.set_triangle(
+            (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
+            (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
+            (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
+            rng_range!(0xff..=0xffffffff),
+            false,
+        );
+        make(&c, "examples/test.png");
+    }
+}
 fn get_same_res_divs(a: u32, b: u32) -> Vec<(u32, (u32, u32))> {
     let mut res: Vec<(u32, (u32, u32))> = (1..=b >> 1).fold(Vec::new(), |mut acc, d| {
         if b % d == 0 && a % (b / d) == 0 {
@@ -516,18 +626,32 @@ fn u32_to_u8(v: &[u32]) -> Vec<u8> {
         acc
     })
 }
+const DRRED: u32 = 0xFF5555FF;
+const DRORANGE: u32 = 0xFFB86CFF;
+const DRYELLOW: u32 = 0xF1FA8CFF;
+const DRGREEN: u32 = 0x50FA7BFF;
+const DRPURPLE: u32 = 0xBD93F9FF;
+const DRCYAN: u32 = 0x8BE9FDFF;
+const DRPINK: u32 = 0xFF79C6FF;
+const DRACVEC: [u32; 7] = [DRRED, DRORANGE, DRYELLOW, DRGREEN, DRCYAN, DRPURPLE, DRPINK];
 // 4096 x 2160
 const SMOL_RES: (u32, u32) = (800, 600);
 const MBP_RES: (u32, u32) = (3024, 1964);
-const FOURK_RES: (u32, u32) = (4096, 2160);
+const FOK_RES: (u32, u32) = (4096, 2160);
 const WIDTH: u32 = MBP_RES.0;
 const HEIGHT: u32 = MBP_RES.1;
 const COLS: u32 = WIDTH.saturating_div(3);
 const ROWS: u32 = HEIGHT.saturating_div(3);
 fn main() {
-    println!("{:?}", get_same_res_divs(WIDTH, HEIGHT));
-    println!("{:?}", get_divs(WIDTH));
-    println!("{:?}", get_divs(HEIGHT));
+    // println!("{:?}", get_same_res_divs(WIDTH, HEIGHT));
+    // println!("{:?}", get_divs(WIDTH));
+    // println!("{:?}", get_divs(HEIGHT));
+    // pixles();
+    // octant_circle(FOK_RES.0, FOK_RES.1, ((FOK_RES.0 >> 1) as isize, (FOK_RES.1 >> 1) as isize), 400,);
+    // borders(800, 600);
+    circles(FOK_RES.0, FOK_RES.1, 80, 50);
+    // lines(4000, 4000, 10);
+    test(64, 64);
     // circles(WIDTH, HEIGHT);
     // borders(SMOL_RES.0, SMOL_RES.1);
     // test();
