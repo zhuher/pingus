@@ -1,5 +1,5 @@
 # Project exclude paths
 /target/
-/img/HACPEM_B_CECTPY.png
-*.png
 *.txt
+*.png
+.DS_Store
