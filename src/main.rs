@@ -4,13 +4,70 @@
 use crate::example::*;
 
 mod png {
-    use std::io::Write;
-
+    pub(crate) struct IHDR {
+        pub(crate) width: u32,
+        pub(crate) height: u32,
+        pub(crate) bit_depth: u8,
+        pub(crate) colour_type: u8,
+        pub(crate) compression_method: u8,
+        pub(crate) filter_method: u8,
+        pub(crate) interlace_method: u8,
+    }
+    pub(crate) struct IDAT {
+        pub(crate) width: u32,
+        pub(crate) height: u32,
+        pub(crate) image_data: Vec<u8>,
+    }
+    pub(crate) struct acTL {
+        pub(crate) num_frames: u32,
+        pub(crate) num_plays: u32,
+    }
+    //   byte
+    //     0    sequence_number       (unsigned int)   Sequence number of the animation chunk, starting from 0
+    //     4    width                 (unsigned int)   Width of the following frame
+    //     8    height                (unsigned int)   Height of the following frame
+    //    12    x_offset              (unsigned int)   X position at which to render the following frame
+    //    16    y_offset              (unsigned int)   Y position at which to render the following frame
+    //    20    delay_num             (unsigned short) Frame delay fraction numerator
+    //    22    delay_den             (unsigned short) Frame delay fraction denominator
+    //    24    dispose_op            (byte)           Type of frame area disposal to be done after rendering this frame
+    //    25    blend_op              (byte)           Type of frame area rendering for this frame
+    pub(crate) struct fcTL {
+        pub(crate) sequence_number: u32,
+        pub(crate) width: u32,
+        pub(crate) height: u32,
+        pub(crate) x_offset: u32,
+        pub(crate) y_offset: u32,
+        pub(crate) delay_num: u16,
+        pub(crate) delay_den: u16,
+        pub(crate) dispose_op: u8,
+        pub(crate) blend_op: u8,
+    }
+    //   value
+    //    0           APNG_DISPOSE_OP_NONE
+    //    1           APNG_DISPOSE_OP_BACKGROUND
+    //    2           APNG_DISPOSE_OP_PREVIOUS
+    // APNG_DISPOSE_OP_NONE: no disposal is done on this frame before rendering the next; the contents of the output buffer are left as is.
+    // APNG_DISPOSE_OP_BACKGROUND: the frame's region of the output buffer is to be cleared to fully transparent black before rendering the next frame.
+    // APNG_DISPOSE_OP_PREVIOUS: the frame's region of the output buffer is to be reverted to the previous contents before rendering the next frame.
+    // If `blend_op` is APNG_BLEND_OP_SOURCE all color components of the frame, including alpha, overwrite the current contents of the frame's output buffer region.
+    // If `blend_op` is APNG_BLEND_OP_OVER the frame should be composited onto the output buffer based on its alpha, using a simple OVER operation as described in the "Alpha Channel Processing" section of the PNG specification [PNG-1.2]. Note that the second variation of the sample code is applicable.
+    //
+    // Note that for the first frame the two blend modes are functionally equivalent due to the clearing of the output buffer at the beginning of each play.
+    pub(crate) struct fdAT {
+        pub(crate) width: u32,
+        pub(crate) height: u32,
+        pub(crate) sequence_number: u32,
+        pub(crate) image_data: Vec<u8>,
+    }
     pub(crate) enum Chunk {
         Sign,
-        IHDR(u32, u32, u8, u8, u8, u8, u8),
-        IDAT(u32, u32, Vec<u8>),
+        IHDR(IHDR),
+        IDAT(IDAT),
         IEND,
+        acTL(acTL),
+        fcTL(fcTL),
+        fdAT(fdAT),
     }
     impl Chunk {
         fn format(chunk: &[u8]) -> Vec<u8> {
@@ -28,34 +85,105 @@ mod png {
         pub(crate) fn form_chunk(self) -> Vec<u8> {
             match self {
                 Chunk::Sign => Vec::from(&b"\x89PNG\r\n\x1a\n"[..]),
-                Chunk::IHDR(
+                Chunk::IHDR(IHDR {
                     width,
                     height,
                     bit_depth,
-                    col_type,
-                    comp_method,
-                    filt_method,
-                    interl_method,
-                ) => match (bit_depth, col_type) {
+                    colour_type,
+                    compression_method,
+                    filter_method,
+                    interlace_method,
+                }) => match (bit_depth, colour_type) {
                     (8, 6) => Chunk::format(&Vec::from_iter(
                         [
                             &b"IHDR"[..],
                             &width.to_be_bytes(),
                             &height.to_be_bytes(),
-                            &[bit_depth, col_type, comp_method, filt_method, interl_method],
+                            &[
+                                bit_depth,
+                                colour_type,
+                                compression_method,
+                                filter_method,
+                                interlace_method,
+                            ],
                         ]
                         .concat(),
                     )),
                     (_, _) => todo!(),
                 },
-                Chunk::IDAT(width, height, data) => {
+                Chunk::IDAT(IDAT {
+                    width,
+                    height,
+                    image_data,
+                }) => {
                     let width_byte_4 = width << 2;
                     let final_len = (width_byte_4 + 1) * height;
                     let mut chunk_data: Vec<u8> = Vec::with_capacity(final_len as usize);
                     let mut window: u32 = (height - 1) * width_byte_4;
                     loop {
                         chunk_data.push(0);
-                        chunk_data.extend(&data[window as usize..(window + width_byte_4) as usize]);
+                        chunk_data
+                            .extend(&image_data[window as usize..(window + width_byte_4) as usize]);
+                        if window == 0 {
+                            break;
+                        }
+                        window -= width_byte_4;
+                    }
+                    assert_eq!(final_len, chunk_data.len() as u32);
+                    Chunk::format(&Vec::from_iter(
+                        [&b"IDAT"[..], &super::nondeflate::compress(&chunk_data)[..]].concat(),
+                    ))
+                }
+                Chunk::IEND => Chunk::format(&Vec::from(&b"IEND"[..])),
+                Chunk::acTL(acTL {
+                    num_plays,
+                    num_frames,
+                }) => Chunk::format(&Vec::from_iter(
+                    [
+                        &b"acTL"[..],
+                        &num_frames.to_be_bytes(),
+                        &num_plays.to_be_bytes(),
+                    ]
+                    .concat(),
+                )),
+                Chunk::fcTL(fcTL {
+                    sequence_number,
+                    width,
+                    height,
+                    x_offset,
+                    y_offset,
+                    delay_num,
+                    delay_den,
+                    dispose_op,
+                    blend_op,
+                }) => Chunk::format(&Vec::from_iter(
+                    [
+                        &b"fcTL"[..],
+                        &sequence_number.to_be_bytes(),
+                        &width.to_be_bytes(),
+                        &height.to_be_bytes(),
+                        &x_offset.to_be_bytes(),
+                        &y_offset.to_be_bytes(),
+                        &delay_num.to_be_bytes(),
+                        &delay_den.to_be_bytes(),
+                        &[dispose_op, blend_op],
+                    ]
+                    .concat(),
+                )),
+                Chunk::fdAT(fdAT {
+                    width,
+                    height,
+                    sequence_number,
+                    image_data,
+                }) => {
+                    let width_byte_4 = width << 2;
+                    let final_len = (width_byte_4 + 1) * height;
+                    let mut chunk_data: Vec<u8> = Vec::with_capacity(final_len as usize);
+                    let mut window: u32 = (height - 1) * width_byte_4;
+                    loop {
+                        chunk_data.push(0);
+                        chunk_data
+                            .extend(&image_data[window as usize..(window + width_byte_4) as usize]);
                         if window == 0 {
                             break;
                         }
@@ -64,28 +192,113 @@ mod png {
                     assert_eq!(final_len, chunk_data.len() as u32);
                     Chunk::format(&Vec::from_iter(
                         [
-                            &b"IDAT"[..],
-                            &/*deflate_bytes_zlib*/super::nondeflate::compress(&chunk_data)[..],
+                            &b"fdAT"[..],
+                            &sequence_number.to_be_bytes(),
+                            &super::nondeflate::compress(&chunk_data)[..],
                         ]
                         .concat(),
                     ))
                 }
-                Chunk::IEND => Chunk::format(&Vec::from(&b"IEND"[..])),
             }
         }
     }
-    pub(crate) fn make(c: &super::canvas::Canvas, filepath: &str) {
-        let mut f: std::fs::File = std::fs::File::create(filepath).unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::Sign)).unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IHDR(c.w, c.h, 8, 6, 0, 0, 0)))
-            .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IDAT(
-            c.w,
-            c.h,
-            super::u32_to_u8(&c.data),
-        )))
-        .unwrap();
-        f.write_all(&Chunk::form_chunk(Chunk::IEND)).unwrap();
+    pub(crate) fn make(
+        c: &super::canvas::Canvas,
+        filepath: &str,
+    ) -> std::result::Result<(), std::io::Error> {
+        let mut f: std::fs::File = std::fs::File::create(filepath)?;
+        std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Sign))?;
+        std::io::Write::write_all(
+            &mut f,
+            &Chunk::form_chunk(Chunk::IHDR(IHDR {
+                width: c.w,
+                height: c.h,
+                bit_depth: 8,
+                colour_type: 6,
+                compression_method: 0,
+                filter_method: 0,
+                interlace_method: 0,
+            })),
+        )?;
+        std::io::Write::write_all(
+            &mut f,
+            &Chunk::form_chunk(Chunk::IDAT(IDAT {
+                width: c.w,
+                height: c.h,
+                image_data: super::u32_to_u8(&c.data),
+            })),
+        )?;
+        std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::IEND))?;
+        Ok(())
+    }
+    pub(crate) fn make_animated(
+        width: u32,
+        height: u32,
+        data: Vec<Vec<u32>>,
+        filepath: &str,
+    ) -> std::result::Result<(), std::io::Error> {
+        let mut f: std::fs::File = std::fs::File::create(filepath)?;
+        std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Sign))?;
+        std::io::Write::write_all(
+            &mut f,
+            &Chunk::form_chunk(Chunk::IHDR(IHDR {
+                width,
+                height,
+                colour_type: 6,
+                bit_depth: 8,
+                compression_method: 0,
+                filter_method: 0,
+                interlace_method: 0,
+            })),
+        )?;
+        std::io::Write::write_all(
+            &mut f,
+            &Chunk::form_chunk(Chunk::acTL(acTL {
+                num_frames: data.len() as u32,
+                num_plays: 0,
+            })),
+        )?;
+        let mut idx: usize = 0;
+        for v in data {
+            std::io::Write::write_all(
+                &mut f,
+                &Chunk::form_chunk(Chunk::fcTL(fcTL {
+                    sequence_number: idx as u32,
+                    width,
+                    height,
+                    x_offset: 0,
+                    y_offset: 0,
+                    delay_num: 0,
+                    delay_den: 0,
+                    dispose_op: 0,
+                    blend_op: 0,
+                })),
+            )?;
+            if idx != 0 {
+                idx += 1;
+                std::io::Write::write_all(
+                    &mut f,
+                    &Chunk::form_chunk(Chunk::fdAT(fdAT {
+                        sequence_number: idx as u32,
+                        width,
+                        height,
+                        image_data: super::u32_to_u8(&v),
+                    })),
+                )?;
+            } else {
+                std::io::Write::write_all(
+                    &mut f,
+                    &Chunk::form_chunk(Chunk::IDAT(IDAT {
+                        width,
+                        height,
+                        image_data: super::u32_to_u8(&v),
+                    })),
+                )?;
+            }
+            idx += 1;
+        }
+        std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::IEND))?;
+        Ok(())
     }
 }
 mod crc32 {
@@ -228,6 +441,7 @@ mod canvas {
         pub(crate) data: Vec<u32>,
         pub(crate) w: u32,
         pub(crate) h: u32,
+        pub(crate) stride: u32,
     }
     pub(crate) type Point = (isize, isize);
     impl Canvas {
@@ -236,7 +450,11 @@ mod canvas {
                 data: vec![colour; (w * h) as usize],
                 w,
                 h,
+                stride: w,
             }
+        }
+        pub(crate) fn fill(&mut self, colour: u32) {
+            self.data = vec![colour; self.w as usize * self.h as usize];
         }
         pub(crate) fn octantcircle(&mut self, cp: Point, r: isize) {
             for y in cp.1.saturating_sub(r)..std::cmp::min(self.h as isize, cp.1 + r) {
@@ -266,7 +484,15 @@ mod canvas {
                 }
             }
         }
-        pub(crate) fn set_circle(&mut self, cp: Point, r: isize, colour: u32, rand: bool) {
+        pub(crate) fn set_circle(
+            &mut self,
+            cp: Point,
+            r: isize,
+            colour: u32,
+            randc: bool,
+            randr: bool,
+        ) {
+            let r = if !randr { r } else { rng_range!(1..=r) };
             for y in
                 std::cmp::max(cp.1.saturating_sub(r), 0)..std::cmp::min(self.h as isize, cp.1 + r)
             {
@@ -278,7 +504,7 @@ mod canvas {
                         set_pixel!(
                             self,
                             (x, y),
-                            if !rand {
+                            if !randc {
                                 colour
                             } else {
                                 rng_range!(0xff..=0xffffffff)
@@ -347,8 +573,9 @@ mod canvas {
         }
         pub(crate) fn set_rainbow(&mut self) {
             let mut colour: u32 = 0xFF0000FF;
+            let mut counter: u32 = 0;
             let mut dc: Dcol = Dcol::Redplusgreen;
-            enum Dcol {
+            pub(crate) enum Dcol {
                 Redplusgreen,
                 Minusredgreen,
                 Greenplusblue,
@@ -357,34 +584,44 @@ mod canvas {
                 Minusbluered,
             }
             for x in 0..self.w {
-                self.set_rect((x as isize, 0), (1, self.h as isize), colour, false);
+                self.set_rect(
+                    (x as isize, 0),
+                    (x as isize + 1, self.h as isize),
+                    colour,
+                    false,
+                );
                 match dc {
                     Dcol::Redplusgreen => {
                         colour = colour.saturating_add(0x010000);
+                        counter += 1;
                         if colour >> 16 & 0xFF == 0xFF {
                             dc = Dcol::Minusredgreen;
                         }
                     }
                     Dcol::Minusredgreen => {
                         colour = colour.saturating_sub(0x01000000);
+                        counter += 1;
                         if colour >> 24 & 0xFF == 0x0 {
                             dc = Dcol::Greenplusblue;
                         }
                     }
                     Dcol::Greenplusblue => {
                         colour = colour.saturating_add(0x0100);
+                        counter += 1;
                         if colour >> 8 & 0xFF == 0xFF {
                             dc = Dcol::Minusgreenblue;
                         }
                     }
                     Dcol::Minusgreenblue => {
                         colour = colour.saturating_sub(0x010000);
+                        counter += 1;
                         if colour >> 16 & 0xFF == 0x0 {
                             dc = Dcol::Blueplusred;
                         }
                     }
                     Dcol::Blueplusred => {
                         colour = colour.saturating_add(0x01000000);
+                        counter += 1;
                         if colour >> 24 & 0xFF == 0xFF {
                             dc = Dcol::Minusbluered;
                         }
@@ -392,7 +629,10 @@ mod canvas {
                     Dcol::Minusbluered => {
                         colour = colour.saturating_sub(0x0100);
                         if colour >> 8 & 0xFF == 0x0 {
+                            println!("{counter}");
                             dc = Dcol::Redplusgreen;
+                        } else {
+                            counter += 1;
                         }
                     }
                 }
@@ -465,12 +705,21 @@ mod bresenham {
 mod example {
     use super::{
         canvas::{Canvas, Point},
-        png::{make, Chunk},
+        png::{acTL, fcTL, fdAT, make, Chunk, IDAT, IHDR},
         u32_to_u8,
     };
+    use crate::png::make_animated;
     use std::io::Write;
 
-    pub(crate) fn circles(w: u32, h: u32, columns: isize, rows: isize) {
+    pub(crate) fn circles(
+        w: u32,
+        h: u32,
+        columns: isize,
+        rows: isize,
+        randc: bool,
+        randr: bool,
+        filename: &str,
+    ) {
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         let cellw: isize = (w as isize).saturating_div(columns);
         let cellh: isize = (h as isize).saturating_div(rows);
@@ -483,18 +732,18 @@ mod example {
             }
             loop {
                 let cp = ((x + (cellw >> 1)), y + (cellh >> 1));
-                if cp.0 > c.w as isize || cp.1 > c.h as isize {
+                if cp.0 + r > c.w as isize || cp.1 + r > c.h as isize {
                     break;
                 }
-                c.set_circle(cp, r, super::DRACVEC[rng_range!(0..7)], false);
+                c.set_circle(cp, r, super::DRACVEC[rng_range!(0..7)], randc, randr);
                 x += cellw;
             }
             x = xpad;
             y += cellh;
         }
-        make(&c, "examples/circles.png");
+        make(&c, &format!("examples/{filename}.png"));
     }
-    pub(crate) fn borders(w: u32, h: u32) {
+    pub(crate) fn borders(w: u32, h: u32, filename: &str) {
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         Canvas::set_rect(
             &mut c,
@@ -526,7 +775,7 @@ mod example {
         );
         make(&c, "examples/borders.png");
     }
-    pub(crate) fn pixles() {
+    pub(crate) fn pixles(filename: &str) {
         let mut c: Canvas = Canvas::new(0x282a36ff, 3, 2);
         set_pixel!(c, (2, 0), 0xFFFFFFFF);
         set_pixel!(c, (1, 0), 0x808080FF);
@@ -534,14 +783,14 @@ mod example {
         set_pixel!(c, (0, 1), 0xFF0000FF);
         set_pixel!(c, (1, 1), 0xFF00FF);
         set_pixel!(c, (2, 1), 0xFFFF);
-        make(&c, "examples/pixles.png");
+        make(&c, &format!("examples/{filename}.png"));
     }
-    pub(crate) fn octant_circle(w: u32, h: u32, cp: Point, r: isize) {
+    pub(crate) fn octant_circle(w: u32, h: u32, cp: Point, r: isize, filename: &str) {
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         Canvas::octantcircle(&mut c, cp, r);
-        make(&c, "examples/octant_circle.png");
+        make(&c, &format!("examples/{filename}.png"));
     }
-    pub(crate) fn lines(w: u32, h: u32, divideby: isize) {
+    pub(crate) fn lines(w: u32, h: u32, divideby: isize, colour: u32, filename: &str) {
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         let mut points: Vec<Point> = Vec::new();
         let mut y: isize = 0;
@@ -579,22 +828,47 @@ mod example {
         for p1 in &points {
             for p2 in &points {
                 if p1 != p2 {
-                    Canvas::set_line(&mut c, *p1, *p2, super::DRACVEC[rng_range!(0..7)], false);
+                    Canvas::set_line(
+                        &mut c, *p1, *p2, colour, /*super::DRACVEC[rng_range!(0..7)]*/
+                        false,
+                    );
                 }
             }
         }
-        make(&c, "examples/lines.png");
+        make(&c, &format!("examples/{filename}.png"));
     }
-    pub(crate) fn test(w: u32, h: u32) {
+    pub(crate) fn test(w: u32, h: u32, frames: u32, filename: &str) {
+        let mut data: Vec<Vec<u32>> = Vec::with_capacity(frames as usize);
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
-        c.set_triangle(
-            (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
-            (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
-            (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
-            rng_range!(0xff..=0xffffffff),
-            false,
-        );
-        make(&c, "examples/test.png");
+        let mut x = 100;
+        let r = x as isize;
+        let s = ((w - (x << 1)) << 1) / frames;
+        c.set_circle((x as isize, h as isize >> 1), r, 0xffc0cbff, false, false);
+        data.push(c.data.clone());
+        for i in 0..frames {
+            match i >= frames >> 1 {
+                false => {
+                    x += s;
+                    c.fill(0x282a36ff);
+                    c.set_circle((x as isize, h as isize >> 1), r, 0xffc0cbff, false, false);
+                    data.push(c.data.clone());
+                }
+                true => {
+                    x -= s;
+                    c.fill(0x282a36ff);
+                    c.set_circle((x as isize, h as isize >> 1), r, 0xffc0cbff, false, false);
+                    data.push(c.data.clone());
+                }
+            }
+        }
+        // c.set_triangle(
+        //     (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
+        //     (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
+        //     (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
+        //     rng_range!(0xff..=0xffffffff),
+        //     false,
+        // );
+        make_animated(w, h, data, &format!("examples/{filename}.png")).unwrap();
     }
 }
 fn get_same_res_divs(a: u32, b: u32) -> Vec<(u32, (u32, u32))> {
@@ -649,9 +923,11 @@ fn main() {
     // pixles();
     // octant_circle(FOK_RES.0, FOK_RES.1, ((FOK_RES.0 >> 1) as isize, (FOK_RES.1 >> 1) as isize), 400,);
     // borders(800, 600);
-    circles(FOK_RES.0, FOK_RES.1, 80, 50);
-    // lines(4000, 4000, 10);
-    test(64, 64);
+    circles(799, 599, 8, 6, false, true, "testcirc" /* &str */);
+    lines(MBP_RES.0, MBP_RES.1, 7, DRGREEN - 0x220000, "lines_wallp");
+    test(800, 600, 24, "testanim");
+    let a: [[u8; 4]; 4] = [[4; 4]; 4];
+    let b: [u8; 16] = [4; 16];
     // circles(WIDTH, HEIGHT);
     // borders(SMOL_RES.0, SMOL_RES.1);
     // test();
