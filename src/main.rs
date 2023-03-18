@@ -4,7 +4,7 @@
 use crate::example::*;
 
 mod png {
-    pub(crate) struct IHDR {
+    pub(crate) struct Ihdr {
         pub(crate) width: u32,
         pub(crate) height: u32,
         pub(crate) bit_depth: u8,
@@ -13,12 +13,12 @@ mod png {
         pub(crate) filter_method: u8,
         pub(crate) interlace_method: u8,
     }
-    pub(crate) struct IDAT {
+    pub(crate) struct Idat {
         pub(crate) width: u32,
         pub(crate) height: u32,
         pub(crate) image_data: Vec<u8>,
     }
-    pub(crate) struct acTL {
+    pub(crate) struct Actl {
         pub(crate) num_frames: u32,
         pub(crate) num_plays: u32,
     }
@@ -32,7 +32,7 @@ mod png {
     //    22    delay_den             (unsigned short) Frame delay fraction denominator
     //    24    dispose_op            (byte)           Type of frame area disposal to be done after rendering this frame
     //    25    blend_op              (byte)           Type of frame area rendering for this frame
-    pub(crate) struct fcTL {
+    pub(crate) struct Fctl {
         pub(crate) sequence_number: u32,
         pub(crate) width: u32,
         pub(crate) height: u32,
@@ -54,7 +54,7 @@ mod png {
     // If `blend_op` is APNG_BLEND_OP_OVER the frame should be composited onto the output buffer based on its alpha, using a simple OVER operation as described in the "Alpha Channel Processing" section of the PNG specification [PNG-1.2]. Note that the second variation of the sample code is applicable.
     //
     // Note that for the first frame the two blend modes are functionally equivalent due to the clearing of the output buffer at the beginning of each play.
-    pub(crate) struct fdAT {
+    pub(crate) struct Fdat {
         pub(crate) width: u32,
         pub(crate) height: u32,
         pub(crate) sequence_number: u32,
@@ -62,12 +62,12 @@ mod png {
     }
     pub(crate) enum Chunk {
         Sign,
-        IHDR(IHDR),
-        IDAT(IDAT),
+        IHDR(Ihdr),
+        IDAT(Idat),
         IEND,
-        acTL(acTL),
-        fcTL(fcTL),
-        fdAT(fdAT),
+        Actl(Actl),
+        Fctl(Fctl),
+        Fdat(Fdat),
     }
     impl Chunk {
         fn format(chunk: &[u8]) -> Vec<u8> {
@@ -85,7 +85,7 @@ mod png {
         pub(crate) fn form_chunk(self) -> Vec<u8> {
             match self {
                 Chunk::Sign => Vec::from(&b"\x89PNG\r\n\x1a\n"[..]),
-                Chunk::IHDR(IHDR {
+                Chunk::IHDR(Ihdr {
                     width,
                     height,
                     bit_depth,
@@ -111,7 +111,7 @@ mod png {
                     )),
                     (_, _) => todo!(),
                 },
-                Chunk::IDAT(IDAT {
+                Chunk::IDAT(Idat {
                     width,
                     height,
                     image_data,
@@ -135,7 +135,7 @@ mod png {
                     ))
                 }
                 Chunk::IEND => Chunk::format(&Vec::from(&b"IEND"[..])),
-                Chunk::acTL(acTL {
+                Chunk::Actl(Actl {
                     num_plays,
                     num_frames,
                 }) => Chunk::format(&Vec::from_iter(
@@ -146,7 +146,7 @@ mod png {
                     ]
                     .concat(),
                 )),
-                Chunk::fcTL(fcTL {
+                Chunk::Fctl(Fctl {
                     sequence_number,
                     width,
                     height,
@@ -170,7 +170,7 @@ mod png {
                     ]
                     .concat(),
                 )),
-                Chunk::fdAT(fdAT {
+                Chunk::Fdat(Fdat {
                     width,
                     height,
                     sequence_number,
@@ -210,7 +210,7 @@ mod png {
         std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Sign))?;
         std::io::Write::write_all(
             &mut f,
-            &Chunk::form_chunk(Chunk::IHDR(IHDR {
+            &Chunk::form_chunk(Chunk::IHDR(Ihdr {
                 width: c.w,
                 height: c.h,
                 bit_depth: 8,
@@ -222,7 +222,7 @@ mod png {
         )?;
         std::io::Write::write_all(
             &mut f,
-            &Chunk::form_chunk(Chunk::IDAT(IDAT {
+            &Chunk::form_chunk(Chunk::IDAT(Idat {
                 width: c.w,
                 height: c.h,
                 image_data: super::u32_to_u8(&c.data),
@@ -241,7 +241,7 @@ mod png {
         std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Sign))?;
         std::io::Write::write_all(
             &mut f,
-            &Chunk::form_chunk(Chunk::IHDR(IHDR {
+            &Chunk::form_chunk(Chunk::IHDR(Ihdr {
                 width,
                 height,
                 colour_type: 6,
@@ -253,7 +253,7 @@ mod png {
         )?;
         std::io::Write::write_all(
             &mut f,
-            &Chunk::form_chunk(Chunk::acTL(acTL {
+            &Chunk::form_chunk(Chunk::Actl(Actl {
                 num_frames: data.len() as u32,
                 num_plays: 0,
             })),
@@ -262,7 +262,7 @@ mod png {
         for v in data {
             std::io::Write::write_all(
                 &mut f,
-                &Chunk::form_chunk(Chunk::fcTL(fcTL {
+                &Chunk::form_chunk(Chunk::Fctl(Fctl {
                     sequence_number: idx as u32,
                     width,
                     height,
@@ -278,7 +278,7 @@ mod png {
                 idx += 1;
                 std::io::Write::write_all(
                     &mut f,
-                    &Chunk::form_chunk(Chunk::fdAT(fdAT {
+                    &Chunk::form_chunk(Chunk::Fdat(Fdat {
                         sequence_number: idx as u32,
                         width,
                         height,
@@ -288,7 +288,7 @@ mod png {
             } else {
                 std::io::Write::write_all(
                     &mut f,
-                    &Chunk::form_chunk(Chunk::IDAT(IDAT {
+                    &Chunk::form_chunk(Chunk::IDAT(Idat {
                         width,
                         height,
                         image_data: super::u32_to_u8(&v),
@@ -496,14 +496,7 @@ mod canvas {
                 }
             }
         }
-        pub(crate) fn set_circle(
-            &mut self,
-            cp: Point,
-            r: isize,
-            colour: u32,
-            randc: bool,
-            randr: bool,
-        ) {
+        pub(crate) fn set_circle(&mut self, cp: Point, r: isize, colour: u32, randr: bool) {
             let r = if !randr { r } else { rng_range!(1..=r) };
             for y in
                 std::cmp::max(cp.1.saturating_sub(r), 0)..std::cmp::min(self.h as isize, cp.1 + r)
@@ -513,20 +506,12 @@ mod canvas {
                 {
                     let (dx, dy) = (x.saturating_sub(cp.0), y.saturating_sub(cp.1));
                     if dx * dx + dy * dy < r * r {
-                        set_pixel!(
-                            self,
-                            (x, y),
-                            if !randc {
-                                colour
-                            } else {
-                                rng_range!(0xff..=0xffffffff)
-                            }
-                        );
+                        set_pixel!(self, (x, y), colour);
                     }
                 }
             }
         }
-        pub(crate) fn set_rect(&mut self, mut p1: Point, mut p2: Point, colour: u32, rand: bool) {
+        pub(crate) fn set_rect(&mut self, mut p1: Point, mut p2: Point, colour: u32) {
             assert_ne!(p1, p2);
             if p1.0 > p2.0 {
                 std::mem::swap(&mut p1.0, &mut p2.0);
@@ -542,33 +527,17 @@ mod canvas {
             }
             for y in std::cmp::max(p1.1, 0)..std::cmp::min(p2.1, self.h as isize) {
                 for x in std::cmp::max(p1.0, 0)..std::cmp::min(p2.0, self.w as isize) {
-                    set_pixel!(
-                        self,
-                        (x, y),
-                        if !rand {
-                            colour
-                        } else {
-                            rng_range!(0xff..=0xffffffff)
-                        }
-                    );
+                    set_pixel!(self, (x, y), colour);
                 }
             }
         }
-        pub(crate) fn set_line(&mut self, mut p1: Point, p2: Point, colour: u32, rand: bool) {
+        pub(crate) fn set_line(&mut self, mut p1: Point, p2: Point, colour: u32) {
             let dx = (p2.0 - p1.0).abs();
             let dy = (p2.1 - p1.1).abs();
             let (sx, sy) = crate::bresenham::octant_to_d(crate::bresenham::octant(p1, p2));
             let mut err = dx - dy;
             loop {
-                set_pixel!(
-                    self,
-                    p1,
-                    if !rand {
-                        colour
-                    } else {
-                        rng_range!(0xff..=0xffffffff)
-                    }
-                );
+                set_pixel!(self, p1, colour);
                 if p1.0 == p2.0 && p1.1 == p2.1 {
                     break;
                 }
@@ -596,12 +565,7 @@ mod canvas {
                 Minusbluered,
             }
             for x in 0..self.w {
-                self.set_rect(
-                    (x as isize, 0),
-                    (x as isize + 1, self.h as isize),
-                    colour,
-                    false,
-                );
+                self.set_rect((x as isize, 0), (x as isize + 1, self.h as isize), colour);
                 match dc {
                     Dcol::Redplusgreen => {
                         colour = colour.saturating_add(0x010000);
@@ -650,14 +614,7 @@ mod canvas {
                 }
             }
         }
-        pub(crate) fn set_triangle(
-            &mut self,
-            a: Point,
-            b: Point,
-            c: Point,
-            colour: u32,
-            rand: bool,
-        ) {
+        pub(crate) fn set_triangle(&mut self, a: Point, b: Point, c: Point, colour: u32) {
             for y in std::cmp::min(std::cmp::min(a.1, self.h as isize), std::cmp::min(b.1, c.1))
                 ..std::cmp::max(a.1, std::cmp::max(b.1, c.1))
             {
@@ -668,15 +625,7 @@ mod canvas {
                     if thirdtdabpos != ((x - a.0) * (c.1 - a.1) - (y - a.1) * (c.0 - a.0) > 0)
                         && ((x - b.0) * (c.1 - b.1) - (y - b.1) * (c.0 - b.0) > 0) == thirdtdabpos
                     {
-                        set_pixel!(
-                            self,
-                            (x, y),
-                            if !rand {
-                                colour
-                            } else {
-                                rng_range!(0xff..=0xffffffff)
-                            }
-                        );
+                        set_pixel!(self, (x, y), colour);
                     }
                 }
             }
@@ -759,18 +708,14 @@ mod bresenham {
 mod example {
     use super::{
         canvas::{Canvas, Point},
-        png::{acTL, fcTL, fdAT, make, Chunk, IDAT, IHDR},
+        png::{make, make_animated},
         u32_to_u8,
     };
-    use crate::png::make_animated;
-    use std::io::Write;
-
     pub(crate) fn circles(
         w: u32,
         h: u32,
         columns: isize,
         rows: isize,
-        randc: bool,
         randr: bool,
         filename: &str,
     ) {
@@ -789,7 +734,7 @@ mod example {
                 if cp.0 + r > c.w as isize || cp.1 + r > c.h as isize {
                     break;
                 }
-                c.set_circle(cp, r, super::DRACVEC[rng_range!(0..7)], randc, randr);
+                c.set_circle(cp, r, super::DRACVEC[rng_range!(0..7)], randr);
                 x += cellw;
             }
             x = xpad;
@@ -804,28 +749,24 @@ mod example {
             (0, 0),
             (w as isize, 1),
             super::DRACVEC[rng_range!(0..7)],
-            false,
         );
         Canvas::set_rect(
             &mut c,
             (0, 0),
             (1, h as isize),
             super::DRACVEC[rng_range!(0..7)],
-            false,
         );
         Canvas::set_rect(
             &mut c,
             (w as isize, h as isize),
             ((w - 1) as isize, 0),
             super::DRACVEC[rng_range!(0..7)],
-            false,
         );
         Canvas::set_rect(
             &mut c,
             (w as isize, h as isize),
             (0, (h - 1) as isize),
             super::DRACVEC[rng_range!(0..7)],
-            false,
         );
         make(&c, "examples/borders.png");
     }
@@ -884,7 +825,6 @@ mod example {
                 if p1 != p2 {
                     Canvas::set_line(
                         &mut c, *p1, *p2, colour, /*super::DRACVEC[rng_range!(0..7)]*/
-                        false,
                     );
                 }
             }
@@ -896,13 +836,14 @@ mod example {
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         let mut x = r;
         let s = ((w - ((x as u32) << 1)) << 1) / frames;
-        c.set_circle((x, h as isize >> 1), r, 0xffc0cbff, false, false);
+        c.set_circle((x, h as isize >> 1), r, 0xffc0cbff, false);
         data.push(c.data.clone());
         for i in 0..(frames >> 1) {
             x += s as isize;
             c.fill(0x282a36ff);
-            c.set_circle((x, h as isize >> 1), r, 0xffc0cbff, false, false);
+            c.set_circle((x, h as isize >> 1), r, 0xffc0cbff, false);
             data.push(c.data.clone());
+            println!("New data len: {}", data.len());
         }
         let mut temp = data.clone();
         temp.pop();
@@ -911,9 +852,14 @@ mod example {
         data.extend(temp);
         make_animated(w, h, data, &format!("examples/{filename}.png")).unwrap();
     }
-    pub(crate) fn test(w: u32, h: u32, points: &[(Point, u32)], distf: &str, filename: &str) {
+    pub(crate) fn voronoi(w: u32, h: u32, points: &[(Point, u32)], distf: &str, filename: &str) {
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
         c.voronoi(points, distf);
+        make(&c, &format!("examples/{filename}.png")).unwrap();
+    }
+    pub(crate) fn test(w: u32, h: u32, p1: Point, p2: Point, filename: &str) {
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
+        c.set_line(p1, p2, super::DRGREEN);
         make(&c, &format!("examples/{filename}.png")).unwrap();
     }
 }
@@ -971,24 +917,28 @@ fn main() {
     // octant_circle(FOK_RES.0, FOK_RES.1, ((FOK_RES.0 >> 1) as isize, (FOK_RES.1 >> 1) as isize), 400,);
     // borders(800, 600);
     // circles(799, 599, 8, 6, false, true, "testcirc" /* &str */);
-    // lines(5000, 5000, 7, DRGREEN, "lines1");
-    let w = 800;
-    let h = 600;
-    // let v = Vec::from([((100, 100), DRRED), ((200, 300), DRGREEN), ((400, 580), DRPURPLE), ((400, 400), DRORANGE), ((600, 240), DRPINK), ((650, 180), DRYELLOW), ]);
-    let rv = (0..10).fold(Vec::with_capacity(10), |mut acc, _| {
-        acc.push((
-            (rng_range!(0..w) as isize, rng_range!(0..h) as isize),
-            rng_range!(0xFF..=0xFFFFFFFF),
-        ));
-        acc
-    });
+    lines(5000, 5000, 8, DRACVEC[rng_range!(0..7)], "linestest");
+    let w: isize = 800;
+    let h: isize = 600;
+    let v = Vec::from([
+        ((100, 100), DRRED),
+        ((200, 300), DRGREEN),
+        ((400, 580), DRPURPLE),
+        ((400, 400), DRORANGE),
+        ((600, 240), DRPINK),
+        ((650, 180), DRYELLOW),
+    ]);
+    let rv: Vec<(crate::canvas::Point, u32)> =
+        (0..10).fold(Vec::with_capacity(10), |mut acc, _| {
+            acc.push((
+                (rng_range!(0..w), rng_range!(0..h)),
+                rng_range!(0xFF..=0xFFFFFFFF),
+            ));
+            acc
+        });
     println!("{rv:?}");
-    test(w, h, &rv, "m", "voronoi_m_test");
-    test(w, h, &rv, "e", "voronoi_e_test");
-
-    let a: [[u8; 4]; 4] = [[4; 4]; 4];
-    let b: [u8; 16] = [4; 16];
-    // circles(WIDTH, HEIGHT);
-    // borders(SMOL_RES.0, SMOL_RES.1);
-    // test();
+    // bouncy_circle_anim(512, 64, 32, 64, "hi_dad_sis");
+    // voronoi(w, h, &rv, "m", "voronoi_m");
+    // circles(800, 600, 40, 30, true, "circles");
+    // borders(32, 32, "borders");
 }
