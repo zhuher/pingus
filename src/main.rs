@@ -435,6 +435,18 @@ macro_rules! rng_range {
         rand::Rng::gen_range(&mut rand::thread_rng(), $range)
     };
 }
+macro_rules! manhattan_dist {
+    ($a:expr, $b:expr) => {
+        ($b.0 as isize - $a.0 as isize).abs() + ($b.1 as isize - $a.1 as isize).abs()
+    };
+}
+macro_rules! euclid_dist {
+    ($a:expr, $b:expr) => {
+        ((($b.0 as isize - $a.0 as isize).abs() * ($b.0 as isize - $a.0 as isize).abs()
+            + ($b.1 as isize - $a.1 as isize) * ($b.1 as isize - $a.1 as isize)) as f64)
+            .sqrt()
+    };
+}
 mod canvas {
     #[derive(Debug)]
     pub(crate) struct Canvas {
@@ -669,6 +681,48 @@ mod canvas {
                 }
             }
         }
+        pub(crate) fn voronoi(&mut self, points: &[(Point, u32)], distf: &str) {
+            for y in 0..self.h {
+                for x in 0..self.w {
+                    let mut min = isize::MAX;
+                    let mut colour: u32 = 0xFF;
+                    match distf {
+                        "m" => {
+                            for point in points {
+                                match manhattan_dist!((x, y), point.0).partial_cmp(&min) {
+                                    Some(std::cmp::Ordering::Less) => {
+                                        min = manhattan_dist!((x, y), point.0);
+                                        colour = point.1;
+                                    }
+                                    Some(std::cmp::Ordering::Equal) => {
+                                        colour = point.1;
+                                        // println!("x: {x}, y: {y}");
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        "e" => {
+                            for point in points {
+                                match (euclid_dist!((x, y), point.0) as isize).partial_cmp(&min) {
+                                    Some(std::cmp::Ordering::Less) => {
+                                        min = euclid_dist!((x, y), point.0) as isize;
+                                        colour = point.1;
+                                    }
+                                    Some(std::cmp::Ordering::Equal) => {
+                                        colour = point.1;
+                                        // println!("x: {x}, y: {y}");
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        _ => return,
+                    }
+                    set_pixel!(self, (x, y), colour);
+                }
+            }
+        }
     }
 }
 
@@ -837,38 +891,30 @@ mod example {
         }
         make(&c, &format!("examples/{filename}.png"));
     }
-    pub(crate) fn test(w: u32, h: u32, frames: u32, filename: &str) {
+    pub(crate) fn bouncy_circle_anim(w: u32, h: u32, r: isize, frames: u32, filename: &str) {
         let mut data: Vec<Vec<u32>> = Vec::with_capacity(frames as usize);
         let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
-        let mut x = 100;
-        let r = x as isize;
-        let s = ((w - (x << 1)) << 1) / frames;
-        c.set_circle((x as isize, h as isize >> 1), r, 0xffc0cbff, false, false);
+        let mut x = r;
+        let s = ((w - ((x as u32) << 1)) << 1) / frames;
+        c.set_circle((x, h as isize >> 1), r, 0xffc0cbff, false, false);
         data.push(c.data.clone());
-        for i in 0..frames {
-            match i >= frames >> 1 {
-                false => {
-                    x += s;
-                    c.fill(0x282a36ff);
-                    c.set_circle((x as isize, h as isize >> 1), r, 0xffc0cbff, false, false);
-                    data.push(c.data.clone());
-                }
-                true => {
-                    x -= s;
-                    c.fill(0x282a36ff);
-                    c.set_circle((x as isize, h as isize >> 1), r, 0xffc0cbff, false, false);
-                    data.push(c.data.clone());
-                }
-            }
+        for i in 0..(frames >> 1) {
+            x += s as isize;
+            c.fill(0x282a36ff);
+            c.set_circle((x, h as isize >> 1), r, 0xffc0cbff, false, false);
+            data.push(c.data.clone());
         }
-        // c.set_triangle(
-        //     (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
-        //     (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
-        //     (rng_range!(0..(w as isize)), rng_range!(0..(h as isize))),
-        //     rng_range!(0xff..=0xffffffff),
-        //     false,
-        // );
+        let mut temp = data.clone();
+        temp.pop();
+        temp.reverse();
+        temp.pop();
+        data.extend(temp);
         make_animated(w, h, data, &format!("examples/{filename}.png")).unwrap();
+    }
+    pub(crate) fn test(w: u32, h: u32, points: &[(Point, u32)], distf: &str, filename: &str) {
+        let mut c: Canvas = Canvas::new(0x282a36ff, w, h);
+        c.voronoi(points, distf);
+        make(&c, &format!("examples/{filename}.png")).unwrap();
     }
 }
 fn get_same_res_divs(a: u32, b: u32) -> Vec<(u32, (u32, u32))> {
@@ -900,6 +946,7 @@ fn u32_to_u8(v: &[u32]) -> Vec<u8> {
         acc
     })
 }
+const DRBG: u32 = 0x282A36FF;
 const DRRED: u32 = 0xFF5555FF;
 const DRORANGE: u32 = 0xFFB86CFF;
 const DRYELLOW: u32 = 0xF1FA8CFF;
@@ -923,9 +970,22 @@ fn main() {
     // pixles();
     // octant_circle(FOK_RES.0, FOK_RES.1, ((FOK_RES.0 >> 1) as isize, (FOK_RES.1 >> 1) as isize), 400,);
     // borders(800, 600);
-    circles(799, 599, 8, 6, false, true, "testcirc" /* &str */);
-    lines(MBP_RES.0, MBP_RES.1, 7, DRGREEN - 0x220000, "lines_wallp");
-    test(800, 600, 24, "testanim");
+    // circles(799, 599, 8, 6, false, true, "testcirc" /* &str */);
+    // lines(5000, 5000, 7, DRGREEN, "lines1");
+    let w = 800;
+    let h = 600;
+    // let v = Vec::from([((100, 100), DRRED), ((200, 300), DRGREEN), ((400, 580), DRPURPLE), ((400, 400), DRORANGE), ((600, 240), DRPINK), ((650, 180), DRYELLOW), ]);
+    let rv = (0..10).fold(Vec::with_capacity(10), |mut acc, _| {
+        acc.push((
+            (rng_range!(0..w) as isize, rng_range!(0..h) as isize),
+            rng_range!(0xFF..=0xFFFFFFFF),
+        ));
+        acc
+    });
+    println!("{rv:?}");
+    test(w, h, &rv, "m", "voronoi_m_test");
+    test(w, h, &rv, "e", "voronoi_e_test");
+
     let a: [[u8; 4]; 4] = [[4; 4]; 4];
     let b: [u8; 16] = [4; 16];
     // circles(WIDTH, HEIGHT);
