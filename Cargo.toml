@@ -1,5 +1,6 @@
 [workspace]
 [package]
+autoexamples = true
 name = "pingus"
 version = "0.1.0"
 edition = "2021"
