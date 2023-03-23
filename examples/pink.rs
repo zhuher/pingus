@@ -1,19 +1,19 @@
 fn main() {
-    let mut v: Vec<u32> = Vec::from([0xffc0cbff; 480000]);
+    let mut v: Vec<u32> = Vec::from([0xFFC0CBFF; 1024]);
     for y in 18..24 {
-        v[13 + 800 * y] = 0xFF0000FF;
-        v[17 + 800 * y] = 0xFF0000FF;
+        v[13 + 32 * y] = 0xFF0000FF;
+        v[17 + 32 * y] = 0xFF0000FF;
     }
     for x in 8..23 {
-        v[x + 800 * 13] = 0xFF0000FF;
+        v[x + 32 * 13] = 0xFF0000FF;
     }
-    v[7 + 800 * 14] = 0xFF0000FF;
-    v[23 + 800 * 14] = 0xFF0000FF;
-    v[6 + 800 * 15] = 0xFF0000FF;
-    v[24 + 800 * 15] = 0xFF0000FF;
-    v[6 + 800 * 16] = 0xFF0000FF;
-    v[24 + 800 * 16] = 0xFF0000FF;
-    match pingus::create(800, 600, &v, "pink.png") {
+    v[7 + 32 * 14] = 0xFF0000FF;
+    v[23 + 32 * 14] = 0xFF0000FF;
+    v[6 + 32 * 15] = 0xFF0000FF;
+    v[24 + 32 * 15] = 0xFF0000FF;
+    v[6 + 32 * 16] = 0xFF0000FF;
+    v[24 + 32 * 16] = 0xFF0000FF;
+    match pingus::create(32, 32, &v, "pink.png") {
         Ok(_) => {
             println!("\x1B[32mThe pink created successfully.\x1B[0m");
         }
