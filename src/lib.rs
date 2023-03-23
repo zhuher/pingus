@@ -214,6 +214,7 @@ where
         }
     }
 }
+/// Writes a png image from the given u32 slice.
 pub fn create(w: u32, h: u32, data: &[u32], filepath: &str) -> Result<(), std::io::Error> {
     let mut f: std::fs::File = std::fs::File::create(filepath)?;
     std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::<[u8; 1]>::Sign))?;
@@ -240,6 +241,7 @@ pub fn create(w: u32, h: u32, data: &[u32], filepath: &str) -> Result<(), std::i
     std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::<[u8; 1]>::Iend))?;
     Ok(())
 }
+/// Writes an animated png image from the given 2d u32 slice.
 pub fn create_anim<T: AsRef<[u32]>>(
     width: u32,
     height: u32,

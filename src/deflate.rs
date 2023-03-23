@@ -1,4 +1,4 @@
-pub fn fake_compress(data: &[u8]) -> Vec<u8> {
+pub(crate) fn fake_compress(data: &[u8]) -> Vec<u8> {
     const CHUNK_SIZE: usize = 65530;
     let num_chunks = (data.len() + CHUNK_SIZE - 1) / CHUNK_SIZE;
     let mut raw_data = Vec::with_capacity(2 + num_chunks * 5 + data.len() + 4);

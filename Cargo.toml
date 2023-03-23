@@ -2,7 +2,7 @@
 [package]
 autoexamples = true
 name = "pingus"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 license = "MIT"
 description = "A simple library to save some u32 buffer into a(n animated) png image. No compression yet."
