@@ -15,13 +15,7 @@ struct Ihdr {
 }
 struct Idat<T>
 where
-    T: AsRef<[u8]>
-        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+    T: AsRef<[u8]> + std::ops::Index<std::ops::Range<usize>, Output = [u8]>,
 {
     width: u32,
     height: u32,
@@ -65,13 +59,7 @@ struct Fctl {
 // Note that for the first frame the two blend modes are functionally equivalent due to the clearing of the output buffer at the beginning of each play.
 struct Fdat<T>
 where
-    T: AsRef<[u8]>
-        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+    T: AsRef<[u8]> + std::ops::Index<std::ops::Range<usize>, Output = [u8]>,
 {
     width: u32,
     height: u32,
@@ -80,13 +68,7 @@ where
 }
 enum Chunk<T>
 where
-    T: AsRef<[u8]>
-        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+    T: AsRef<[u8]> + std::ops::Index<std::ops::Range<usize>, Output = [u8]>,
 {
     Sign,
     Ihdr(Ihdr),
@@ -98,13 +80,7 @@ where
 }
 impl<T> Chunk<T>
 where
-    T: AsRef<[u8]>
-        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
-        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+    T: AsRef<[u8]> + std::ops::Index<std::ops::Range<usize>, Output = [u8]>,
 {
     fn format(chunk: &[u8]) -> Vec<u8> {
         Vec::from_iter(
