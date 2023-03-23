@@ -4,6 +4,8 @@ autoexamples = true
 name = "pingus"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "This library turns some u32 RGBA data buffer into a(n animated) PNG image. No compression yet."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]

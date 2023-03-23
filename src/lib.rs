@@ -228,10 +228,10 @@ pub fn create(w: u32, h: u32, data: &[u32], filepath: &str) -> Result<(), std::i
     std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Iend))?;
     Ok(())
 }
-pub fn create_anim(
+pub fn create_anim<T: AsRef<[u32]>>(
     width: u32,
     height: u32,
-    data: &[Vec<u32>],
+    data: &[T],
     filepath: &str,
 ) -> Result<(), std::io::Error> {
     let mut f: std::fs::File = std::fs::File::create(filepath)?;
@@ -279,7 +279,7 @@ pub fn create_anim(
                     sequence_number: idx as u32,
                     width,
                     height,
-                    image_data: helper::u32_to_u8(v),
+                    image_data: helper::u32_to_u8(v.as_ref()),
                 })),
             )?;
         } else {
@@ -288,7 +288,7 @@ pub fn create_anim(
                 &Chunk::form_chunk(Chunk::Idat(Idat {
                     width,
                     height,
-                    image_data: helper::u32_to_u8(v),
+                    image_data: helper::u32_to_u8(v.as_ref()),
                 })),
             )?;
         }
