@@ -13,10 +13,19 @@ struct Ihdr {
     filter_method: u8,
     interlace_method: u8,
 }
-struct Idat {
+struct Idat<T>
+where
+    T: AsRef<[u8]>
+        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+{
     width: u32,
     height: u32,
-    image_data: Vec<u8>,
+    image_data: T,
 }
 struct Actl {
     num_frames: u32,
@@ -54,22 +63,49 @@ struct Fctl {
 // If `blend_op` is APNG_BLEND_OP_OVER the frame should be composited onto the output buffer based on its alpha, using a simple OVER operation as described in the "Alpha Channel Processing" section of the PNG specification [PNG-1.2]. Note that the second variation of the sample code is applicable.
 //
 // Note that for the first frame the two blend modes are functionally equivalent due to the clearing of the output buffer at the beginning of each play.
-struct Fdat {
+struct Fdat<T>
+where
+    T: AsRef<[u8]>
+        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+{
     width: u32,
     height: u32,
     sequence_number: u32,
-    image_data: Vec<u8>,
+    image_data: T,
 }
-enum Chunk {
+enum Chunk<T>
+where
+    T: AsRef<[u8]>
+        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+{
     Sign,
     Ihdr(Ihdr),
-    Idat(Idat),
+    Idat(Idat<T>),
     Iend,
     Actl(Actl),
     Fctl(Fctl),
-    Fdat(Fdat),
+    Fdat(Fdat<T>),
 }
-impl Chunk {
+impl<T> Chunk<T>
+where
+    T: AsRef<[u8]>
+        + std::ops::Index<std::ops::Range<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFrom<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeTo<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeToInclusive<usize>, Output = [u8]>
+        + std::ops::Index<std::ops::RangeFull, Output = [u8]>,
+{
     fn format(chunk: &[u8]) -> Vec<u8> {
         Vec::from_iter(
             [
@@ -82,8 +118,8 @@ impl Chunk {
     }
     fn form_chunk(self) -> Vec<u8> {
         match self {
-            Chunk::Sign => Vec::from(&b"\x89PNG\r\n\x1a\n"[..]),
-            Chunk::Ihdr(Ihdr {
+            Self::Sign => Vec::from(&b"\x89PNG\r\n\x1a\n"[..]),
+            Self::Ihdr(Ihdr {
                 width,
                 height,
                 bit_depth,
@@ -92,7 +128,7 @@ impl Chunk {
                 filter_method,
                 interlace_method,
             }) => match (bit_depth, colour_type) {
-                (8, 6) => Chunk::format(&Vec::from_iter(
+                (8, 6) => Self::format(&Vec::from_iter(
                     [
                         &b"IHDR"[..],
                         &width.to_be_bytes(),
@@ -109,7 +145,7 @@ impl Chunk {
                 )),
                 (_, _) => todo!(),
             },
-            Chunk::Idat(Idat {
+            Self::Idat(Idat {
                 width,
                 height,
                 image_data,
@@ -129,15 +165,15 @@ impl Chunk {
                     window -= width_bytes;
                 }
                 assert_eq!(final_len, chunk_data.len() as u32);
-                Chunk::format(&Vec::from_iter(
+                Self::format(&Vec::from_iter(
                     [&b"IDAT"[..], &deflate::fake_compress(&chunk_data)[..]].concat(),
                 ))
             }
-            Chunk::Iend => Chunk::format(&Vec::from(&b"IEND"[..])),
-            Chunk::Actl(Actl {
+            Self::Iend => Self::format(&Vec::from(&b"IEND"[..])),
+            Self::Actl(Actl {
                 num_plays,
                 num_frames,
-            }) => Chunk::format(&Vec::from_iter(
+            }) => Self::format(&Vec::from_iter(
                 [
                     &b"acTL"[..],
                     &num_frames.to_be_bytes(),
@@ -145,7 +181,7 @@ impl Chunk {
                 ]
                 .concat(),
             )),
-            Chunk::Fctl(Fctl {
+            Self::Fctl(Fctl {
                 sequence_number,
                 width,
                 height,
@@ -155,7 +191,7 @@ impl Chunk {
                 delay_den,
                 dispose_op,
                 blend_op,
-            }) => Chunk::format(&Vec::from_iter(
+            }) => Self::format(&Vec::from_iter(
                 [
                     &b"fcTL"[..],
                     &sequence_number.to_be_bytes(),
@@ -169,7 +205,7 @@ impl Chunk {
                 ]
                 .concat(),
             )),
-            Chunk::Fdat(Fdat {
+            Self::Fdat(Fdat {
                 width,
                 height,
                 sequence_number,
@@ -190,7 +226,7 @@ impl Chunk {
                     window -= width_byte_4;
                 }
                 assert_eq!(final_len, chunk_data.len() as u32);
-                Chunk::format(&Vec::from_iter(
+                Self::format(&Vec::from_iter(
                     [
                         &b"fdAT"[..],
                         &sequence_number.to_be_bytes(),
@@ -204,10 +240,10 @@ impl Chunk {
 }
 pub fn create(w: u32, h: u32, data: &[u32], filepath: &str) -> Result<(), std::io::Error> {
     let mut f: std::fs::File = std::fs::File::create(filepath)?;
-    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Sign))?;
+    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::<[u8; 1]>::Sign))?;
     std::io::Write::write_all(
         &mut f,
-        &Chunk::form_chunk(Chunk::Ihdr(Ihdr {
+        &Chunk::form_chunk(Chunk::<[u8; 1]>::Ihdr(Ihdr {
             width: w,
             height: h,
             bit_depth: 8,
@@ -219,13 +255,13 @@ pub fn create(w: u32, h: u32, data: &[u32], filepath: &str) -> Result<(), std::i
     )?;
     std::io::Write::write_all(
         &mut f,
-        &Chunk::form_chunk(Chunk::Idat(Idat {
+        &Chunk::form_chunk(Chunk::<Vec<u8>>::Idat(Idat {
             width: w,
             height: h,
             image_data: helper::u32_to_u8(data),
         })),
     )?;
-    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Iend))?;
+    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::<[u8; 1]>::Iend))?;
     Ok(())
 }
 pub fn create_anim<T: AsRef<[u32]>>(
@@ -235,10 +271,10 @@ pub fn create_anim<T: AsRef<[u32]>>(
     filepath: &str,
 ) -> Result<(), std::io::Error> {
     let mut f: std::fs::File = std::fs::File::create(filepath)?;
-    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Sign))?;
+    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::<[u8; 1]>::Sign))?;
     std::io::Write::write_all(
         &mut f,
-        &Chunk::form_chunk(Chunk::Ihdr(Ihdr {
+        &Chunk::form_chunk(Chunk::<[u8; 1]>::Ihdr(Ihdr {
             width,
             height,
             colour_type: 6,
@@ -250,7 +286,7 @@ pub fn create_anim<T: AsRef<[u32]>>(
     )?;
     std::io::Write::write_all(
         &mut f,
-        &Chunk::form_chunk(Chunk::Actl(Actl {
+        &Chunk::form_chunk(Chunk::<[u8; 1]>::Actl(Actl {
             num_frames: data.len() as u32,
             num_plays: 0,
         })),
@@ -259,7 +295,7 @@ pub fn create_anim<T: AsRef<[u32]>>(
     for v in data {
         std::io::Write::write_all(
             &mut f,
-            &Chunk::form_chunk(Chunk::Fctl(Fctl {
+            &Chunk::form_chunk(Chunk::<[u8; 1]>::Fctl(Fctl {
                 sequence_number: idx as u32,
                 width,
                 height,
@@ -294,6 +330,6 @@ pub fn create_anim<T: AsRef<[u32]>>(
         }
         idx += 1;
     }
-    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::Iend))?;
+    std::io::Write::write_all(&mut f, &Chunk::form_chunk(Chunk::<[u8; 1]>::Iend))?;
     Ok(())
 }

@@ -5,7 +5,8 @@ name = "pingus"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "This library turns some u32 RGBA data buffer into a(n animated) PNG image. No compression yet."
+description = "A simple library to save some u32 buffer into a(n animated) png image. No compression yet."
+repository = "https://github.com/zhuher/pingus"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
